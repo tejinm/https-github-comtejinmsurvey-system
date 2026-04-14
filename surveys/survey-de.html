@@ -3,100 +3,175 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kundenzufriedenheit</title>
+  <title>Hisense Service-Zufriedenheitsumfrage</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f7f7f7; color: #222; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 2rem 1rem; }
-    .card { background: #fff; border-radius: 16px; padding: 2rem; width: 100%; max-width: 480px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); }
-    .logo-area { text-align: center; margin-bottom: 1.5rem; }
-    .logo-area h1 { font-size: 1.3rem; font-weight: 600; color: #111; }
-    .logo-area p  { font-size: 0.9rem; color: #666; margin-top: 4px; }
-    .warning { background: #fff8e1; border: 1px solid #f59e0b; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; color: #92400e; margin-bottom: 1.5rem; }
-    .question { margin-bottom: 1.75rem; }
-    .question label { display: block; font-size: 0.95rem; font-weight: 500; margin-bottom: 0.6rem; color: #333; }
-    .stars { display: flex; gap: 8px; }
-    .stars span { font-size: 2rem; cursor: pointer; color: #ddd; transition: color 0.15s; line-height: 1; user-select: none; }
-    .stars span.active { color: #f59e0b; }
-    .stars span:hover  { color: #f59e0b; }
-    textarea { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; font-family: inherit; resize: vertical; min-height: 90px; color: #333; background: #fafafa; }
-    textarea:focus { outline: none; border-color: #999; background: #fff; }
-    .meta-info { background: #f5f5f5; border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.78rem; color: #888; margin-bottom: 1.5rem; }
-    .btn { width: 100%; padding: 14px; background: #111; color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background 0.2s; }
-    .btn:hover { background: #333; } .btn:active { background: #000; } .btn:disabled { background: #ccc; cursor: not-allowed; }
-    .error { background: #fee2e2; border: 1px solid #f87171; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.88rem; color: #991b1b; margin-top: 1rem; }
-    .thankyou { text-align: center; padding: 2rem 0; display: none; }
-    .thankyou .icon { font-size: 3rem; margin-bottom: 1rem; }
-    .thankyou h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 0.5rem; }
-    .thankyou p  { color: #666; font-size: 0.95rem; }
+    :root { --teal:#00B09B;--teal-light:#E8F7F5;--teal-dark:#008F7D;--text-dark:#1a1a2e;--text-mid:#55556A;--text-light:#9999AA;--border:#E8E8EE;--bg-gray:#F8F9FA;--radius:12px; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f4f5f7;color:var(--text-dark);min-height:100vh;}
+    .site-header{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.5rem;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;}
+    .site-header-title{font-size:.82rem;color:var(--text-light);letter-spacing:.04em;text-transform:uppercase;}
+    .logo{font-size:1.25rem;font-weight:800;color:var(--teal);letter-spacing:-.02em;}
+    .logo sup{font-size:.5em;font-weight:400;color:var(--text-mid);letter-spacing:.12em;vertical-align:super;margin-left:3px;}
+    .page{max-width:600px;margin:0 auto;padding:1.5rem 1.25rem 5rem;}
+    .illustration{background:var(--teal-light);border-radius:20px;padding:1.5rem 1rem;margin-bottom:1.75rem;overflow:hidden;}
+    .landing-text{font-size:1.05rem;line-height:1.65;color:var(--text-dark);margin-bottom:1.75rem;text-align:center;}
+    .btn-cta{display:block;width:fit-content;min-width:200px;margin:0 auto .6rem;padding:15px 36px;background:var(--teal);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s,transform .1s;letter-spacing:.01em;}
+    .btn-cta:hover{background:var(--teal-dark);} .btn-cta:active{transform:scale(.98);}
+    .completion{text-align:center;font-size:.82rem;color:var(--text-light);}
+    .card{background:#fff;border-radius:var(--radius);padding:1.25rem;margin-bottom:.75rem;border:1px solid var(--border);}
+    .q-num{font-size:.72rem;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem;}
+    .q-text{font-size:.97rem;font-weight:500;color:var(--text-dark);margin-bottom:1rem;line-height:1.45;}
+    .required{color:#e53e3e;}
+    .choices{display:flex;gap:8px;}
+    .choice{flex:1;padding:10px 6px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:.9rem;font-weight:500;color:var(--text-mid);cursor:pointer;transition:all .15s;text-align:center;}
+    .choice:hover{border-color:var(--teal);color:var(--teal);} .choice.selected{border-color:var(--teal);background:var(--teal);color:#fff;}
+    .stars{display:flex;gap:4px;margin-bottom:4px;}
+    .stars span{font-size:2.1rem;cursor:pointer;color:#DDD;transition:color .1s;line-height:1;user-select:none;}
+    .stars span.on{color:#F59E0B;} .stars span:hover{color:#F59E0B;}
+    .scale{display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-light);margin-top:2px;}
+    .cond{margin-top:1rem;display:none;} .cond.show{display:block;}
+    .cond label{font-size:.83rem;color:var(--text-mid);display:block;margin-bottom:5px;}
+    .nps-row{display:flex;gap:3px;flex-wrap:nowrap;}
+    .nps-btn{flex:1;min-width:0;aspect-ratio:1;border:1.5px solid var(--border);border-radius:6px;background:#fff;font-size:.8rem;font-weight:500;color:var(--text-mid);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;}
+    .nps-btn:hover{border-color:var(--teal);color:var(--teal);} .nps-btn.selected{border-color:var(--teal);background:var(--teal);color:#fff;}
+    .nps-labels{display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-light);margin-top:5px;}
+    textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.92rem;font-family:inherit;resize:vertical;min-height:80px;color:var(--text-dark);background:var(--bg-gray);transition:border-color .15s;}
+    textarea:focus{outline:none;border-color:var(--teal);background:#fff;}
+    .btn-submit{width:100%;padding:15px;background:var(--teal);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s;margin-top:.5rem;}
+    .btn-submit:hover{background:var(--teal-dark);} .btn-submit:disabled{background:#ccc;cursor:not-allowed;}
+    .error{background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:.75rem 1rem;font-size:.86rem;color:#991B1B;margin-top:.75rem;display:none;}
+    .ty{text-align:center;padding:3rem 1rem;}
+    .ty-icon{width:68px;height:68px;background:var(--teal-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;font-size:1.8rem;color:var(--teal);}
+    .ty h2{font-size:1.4rem;margin-bottom:.75rem;} .ty p{color:var(--text-mid);line-height:1.65;font-size:.95rem;}
+    footer{background:#fff;border-top:1px solid var(--border);padding:.75rem 1.5rem;display:flex;justify-content:center;align-items:center;gap:1.5rem;flex-wrap:wrap;font-size:.76rem;}
+    footer a{color:var(--teal);text-decoration:none;} footer a:hover{text-decoration:underline;}
   </style>
 </head>
 <body>
-<div class="card">
-  <div class="logo-area">
-    <h1>Wie war Ihr Service?</h1>
-    <p>Ihre Meinung hilft uns, besser zu werden.</p>
+<input type="hidden" id="f-unit">
+<input type="hidden" id="f-market">
+
+<header class="site-header">
+  <span class="site-header-title">Service-Zufriedenheitsumfrage</span>
+  <span class="logo">Hisense<sup>EUROPE</sup></span>
+</header>
+
+<div id="pg-landing" class="page">
+  <div class="illustration">
+    <svg width="100%" viewBox="0 0 400 190" xmlns="http://www.w3.org/2000/svg">
+      <rect x="110" y="45" width="95" height="115" rx="9" fill="#fff" stroke="#B2DED9" stroke-width="1.5"/>
+      <rect x="120" y="53" width="75" height="28" rx="5" fill="#E8F7F5"/>
+      <circle cx="133" cy="67" r="6" fill="#00B09B"/>
+      <circle cx="150" cy="67" r="4" fill="#B2DED9"/>
+      <circle cx="163" cy="67" r="4" fill="#B2DED9"/>
+      <circle cx="157" cy="110" r="34" fill="#E8F7F5" stroke="#00B09B" stroke-width="2"/>
+      <circle cx="157" cy="110" r="23" fill="#fff" stroke="#00B09B" stroke-width="1.5"/>
+      <circle cx="157" cy="110" r="9" fill="#00B09B" opacity="0.25"/>
+      <circle cx="272" cy="72" r="19" fill="#FDDCB5"/>
+      <rect x="253" y="92" width="38" height="55" rx="9" fill="#2D7DD2"/>
+      <rect x="253" y="92" width="38" height="18" rx="9" fill="#1A5FAA"/>
+      <line x1="253" y1="108" x2="225" y2="138" stroke="#2D7DD2" stroke-width="9" stroke-linecap="round"/>
+      <line x1="291" y1="106" x2="316" y2="122" stroke="#2D7DD2" stroke-width="9" stroke-linecap="round"/>
+      <line x1="263" y1="147" x2="255" y2="178" stroke="#333" stroke-width="9" stroke-linecap="round"/>
+      <line x1="281" y1="147" x2="289" y2="178" stroke="#333" stroke-width="9" stroke-linecap="round"/>
+      <rect x="308" y="113" width="24" height="7" rx="3.5" fill="#888" transform="rotate(-25 308 113)"/>
+      <circle cx="309" cy="115" r="5" fill="none" stroke="#888" stroke-width="2.5" transform="rotate(-25 309 115)"/>
+      <rect x="52" y="140" width="52" height="32" rx="5" fill="#F0A030"/>
+      <rect x="63" y="132" width="30" height="11" rx="4" fill="#F0A030" stroke="#C07010" stroke-width="1.2"/>
+      <line x1="54" y1="155" x2="102" y2="155" stroke="#C07010" stroke-width="1.2"/>
+      <circle cx="338" cy="58" r="21" fill="#fff" stroke="#DDD" stroke-width="1.5"/>
+      <line x1="338" y1="58" x2="338" y2="43" stroke="#444" stroke-width="2" stroke-linecap="round"/>
+      <line x1="338" y1="58" x2="349" y2="64" stroke="#444" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="338" cy="58" r="2.5" fill="#444"/>
+    </svg>
   </div>
-  <div class="warning" id="warning" style="display:none">⚠️ QR-Code möglicherweise ungültig. Bitte wenden Sie sich an Ihren Techniker.</div>
-  <form id="survey-form">
-    <input type="hidden" id="unit"><input type="hidden" id="market"><input type="hidden" id="lang" value="de">
-    <div class="meta-info" id="meta-info"></div>
-    <div class="question">
-      <label>Wie zufrieden waren Sie insgesamt?</label>
-      <div class="stars" data-field="q1_overall"><span data-val="1">★</span><span data-val="2">★</span><span data-val="3">★</span><span data-val="4">★</span><span data-val="5">★</span></div>
-      <input type="hidden" id="q1_overall">
+  <p class="landing-text">Hallo,<br>wir würden gerne mehr darüber erfahren, wie Ihre kürzliche Wartung Ihres <strong>Hisense</strong>-Geräts verlaufen ist.</p>
+  <button class="btn-cta" onclick="showSurvey()">Mehr erfahren</button>
+  <p class="completion">Bearbeitungszeit: 2 Minuten</p>
+</div>
+
+<div id="pg-survey" class="page" style="display:none">
+  <div class="card">
+    <p class="q-num">Frage 1 von 7</p>
+    <p class="q-text">Wurde Ihr Problem erfolgreich gelöst? <span class="required">*</span></p>
+    <div class="choices" data-target="q1_resolved">
+      <button class="choice" data-val="yes"      onclick="pickChoice(this)">Ja</button>
+      <button class="choice" data-val="partially" onclick="pickChoice(this)">Teilweise</button>
+      <button class="choice" data-val="no"        onclick="pickChoice(this)">Nein</button>
     </div>
-    <div class="question">
-      <label>Wurde die Arbeit pünktlich abgeschlossen?</label>
-      <div class="stars" data-field="q2_timeliness"><span data-val="1">★</span><span data-val="2">★</span><span data-val="3">★</span><span data-val="4">★</span><span data-val="5">★</span></div>
-      <input type="hidden" id="q2_timeliness">
+    <input type="hidden" id="q1_resolved">
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 2 von 7</p>
+    <p class="q-text">Wie zufrieden waren Sie mit dem heute erhaltenen Service?</p>
+    <div class="stars" data-field="q2_satisfaction"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Sehr unzufrieden</span><span>Sehr zufrieden</span></div>
+    <input type="hidden" id="q2_satisfaction">
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 3 von 7</p>
+    <p class="q-text">Wie bewerten Sie die Professionalität und das Verhalten des Servicetechnikers?</p>
+    <div class="stars" data-field="q3_professionalism"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Sehr schlecht</span><span>Ausgezeichnet</span></div>
+    <input type="hidden" id="q3_professionalism">
+    <div class="cond" id="q3-cond">
+      <label>Bitte erläutern Sie, was nicht gut war (optional):</label>
+      <textarea id="q3_comment" placeholder="Ihr Feedback..."></textarea>
     </div>
-    <div class="question">
-      <label>Würden Sie unseren Service weiterempfehlen?</label>
-      <div class="stars" data-field="q3_recommend"><span data-val="1">★</span><span data-val="2">★</span><span data-val="3">★</span><span data-val="4">★</span><span data-val="5">★</span></div>
-      <input type="hidden" id="q3_recommend">
-    </div>
-    <div class="question">
-      <label>Weitere Kommentare (optional)</label>
-      <textarea id="comments" placeholder="Ihr Feedback..."></textarea>
-    </div>
-    <button type="submit" class="btn" id="submit-btn">Bewertung absenden</button>
-    <div class="error" id="error-msg" style="display:none"></div>
-  </form>
-  <div class="thankyou" id="thankyou">
-    <div class="icon">✓</div>
-    <h2>Vielen Dank!</h2>
-    <p>Ihre Bewertung wurde erfolgreich übermittelt.<br>Wir schätzen Ihr Feedback sehr.</p>
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 4 von 7</p>
+    <p class="q-text">Wie einfach war der gesamte Serviceprozess für Sie?</p>
+    <div class="stars" data-field="q4_ease"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Sehr schwierig</span><span>Sehr einfach</span></div>
+    <input type="hidden" id="q4_ease">
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 5 von 7</p>
+    <p class="q-text">Wie zufrieden waren Sie mit der Zeit, die für Ihre Reparatur benötigt wurde?</p>
+    <div class="stars" data-field="q5_time"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Sehr unzufrieden</span><span>Sehr zufrieden</span></div>
+    <input type="hidden" id="q5_time">
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 6 von 7</p>
+    <p class="q-text">Gibt es etwas, das wir besser hätten machen können?</p>
+    <textarea id="q6_improvement" placeholder="Ihr Feedback... (optional)"></textarea>
+  </div>
+  <div class="card">
+    <p class="q-num">Frage 7 von 7</p>
+    <p class="q-text">Wie wahrscheinlich ist es, dass Sie unseren Service einem Freund oder Familienmitglied empfehlen würden?</p>
+    <div class="nps-row" id="nps-row"></div>
+    <div class="nps-labels"><span>Überhaupt nicht wahrscheinlich</span><span>Äußerst wahrscheinlich</span></div>
+    <input type="hidden" id="nps_score">
+  </div>
+  <button class="btn-submit" id="submit-btn" onclick="submitSurvey()">Absenden</button>
+  <div class="error" id="error-msg"></div>
+</div>
+
+<div id="pg-thankyou" class="page" style="display:none">
+  <div class="ty">
+    <div class="ty-icon">✓</div>
+    <h2>Vielen Dank für Ihr Feedback!</h2>
+    <p>Ihre Antwort hilft uns, unseren Service zu verbessern.<br>Wir schätzen Ihre Zeit und Ihr Vertrauen.</p>
   </div>
 </div>
+
+<footer>
+  <a href="#privacy">Datenschutzrichtlinie</a>
+  <a href="#terms">Nutzungsbedingungen</a>
+  <a href="mailto:privacy@hisense-europe.com">Kontakt: privacy@hisense-europe.com</a>
+</footer>
+
 <script>
-  const params = new URLSearchParams(window.location.search);
-  const unit = params.get('unit') || '', market = params.get('market') || '';
-  document.getElementById('unit').value = unit;
-  document.getElementById('market').value = market;
-  if (!unit || !market) document.getElementById('warning').style.display = 'block';
-  document.getElementById('meta-info').textContent = (unit || market) ? `Einheit: ${unit||'?'} · Markt: ${market||'?'}` : '';
-  if (!unit && !market) document.getElementById('meta-info').style.display = 'none';
-  document.querySelectorAll('.stars').forEach(group => {
-    const field = group.dataset.field, spans = group.querySelectorAll('span');
-    spans.forEach(span => span.addEventListener('click', () => {
-      const val = parseInt(span.dataset.val);
-      document.getElementById(field).value = val;
-      spans.forEach(s => s.classList.toggle('active', parseInt(s.dataset.val) <= val));
-    }));
-  });
-  document.getElementById('survey-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('submit-btn'), errorEl = document.getElementById('error-msg');
-    errorEl.style.display = 'none'; btn.disabled = true; btn.textContent = 'Wird gesendet...';
-    try {
-      const res = await fetch('/api/submit', { method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ unit, market, lang:'de', q1_overall: document.getElementById('q1_overall').value||null, q2_timeliness: document.getElementById('q2_timeliness').value||null, q3_recommend: document.getElementById('q3_recommend').value||null, comments: document.getElementById('comments').value.trim()||null })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) { document.getElementById('survey-form').style.display='none'; document.getElementById('thankyou').style.display='block'; }
-      else throw new Error(data.error || 'Unbekannter Fehler');
-    } catch(err) { errorEl.textContent = 'Fehler: '+err.message; errorEl.style.display='block'; btn.disabled=false; btn.textContent='Bewertung absenden'; }
-  });
+  const p = new URLSearchParams(window.location.search);
+  document.getElementById('f-unit').value   = p.get('unit')   || '';
+  document.getElementById('f-market').value = p.get('market') || '';
+  function showSurvey(){document.getElementById('pg-landing').style.display='none';document.getElementById('pg-survey').style.display='block';window.scrollTo(0,0);}
+  function pickChoice(btn){const row=btn.closest('.choices');row.querySelectorAll('.choice').forEach(b=>b.classList.remove('selected'));btn.classList.add('selected');document.getElementById(row.dataset.target).value=btn.dataset.val;}
+  document.querySelectorAll('.stars').forEach(group=>{const field=group.dataset.field,spans=group.querySelectorAll('span');spans.forEach(span=>span.addEventListener('click',()=>{const val=parseInt(span.dataset.v);document.getElementById(field).value=val;spans.forEach(s=>s.classList.toggle('on',parseInt(s.dataset.v)<=val));if(field==='q3_professionalism')document.getElementById('q3-cond').classList.toggle('show',val<=2);}));});
+  const npsRow=document.getElementById('nps-row');for(let i=0;i<=10;i++){const b=document.createElement('button');b.className='nps-btn';b.textContent=i;b.type='button';b.onclick=()=>{document.getElementById('nps_score').value=i;npsRow.querySelectorAll('.nps-btn').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');};npsRow.appendChild(b);}
+  async function submitSurvey(){const btn=document.getElementById('submit-btn'),err=document.getElementById('error-msg');err.style.display='none';if(!document.getElementById('q1_resolved').value){err.textContent='Bitte beantworten Sie Frage 1.';err.style.display='block';document.querySelector('.card').scrollIntoView({behavior:'smooth'});return;}btn.disabled=true;btn.textContent='Wird gesendet...';const ns=document.getElementById('nps_score').value;try{const res=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit:document.getElementById('f-unit').value,market:document.getElementById('f-market').value,lang:'de',q1_resolved:document.getElementById('q1_resolved').value||null,q2_satisfaction:document.getElementById('q2_satisfaction').value||null,q3_professionalism:document.getElementById('q3_professionalism').value||null,q3_comment:document.getElementById('q3_comment').value.trim()||null,q4_ease:document.getElementById('q4_ease').value||null,q5_time:document.getElementById('q5_time').value||null,q6_improvement:document.getElementById('q6_improvement').value.trim()||null,nps_score:ns!==''?parseInt(ns):null})});const data=await res.json();if(res.ok&&data.success){document.getElementById('pg-survey').style.display='none';document.getElementById('pg-thankyou').style.display='block';window.scrollTo(0,0);}else throw new Error(data.error||'Fehler');}catch(e){err.textContent='Fehler: '+e.message;err.style.display='block';btn.disabled=false;btn.textContent='Absenden';}}
 </script>
 </body>
 </html>

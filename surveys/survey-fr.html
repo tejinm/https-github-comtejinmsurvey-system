@@ -1,225 +1,177 @@
-const express = require('express');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
-const sanitizeHtml = require('sanitize-html');
-const path = require('path');
-require('dotenv').config();
-
-const {
-  insertResponse,
-  getAllResponses,
-  getResponsesByUnit,
-  getResponsesByMarket,
-  getResponsesByUnitAndMarket,
-  isDuplicateKey,
-  getDistinctUnits,
-  getDistinctMarkets,
-} = require('./db');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ─── Survey routes ────────────────────────────────────────────────────────────
-
-// Language router — this is what gets encoded in QR codes
-// e.g. http://localhost:3000/start?unit=baumeister&market=DE&lang=de
-app.get('/start', (req, res) => {
-  const { lang, unit, market } = req.query;
-  const params = new URLSearchParams({ unit: unit || '', market: market || '', lang: lang || 'en' });
-
-  const langMap = { de: 'de', fr: 'fr', en: 'en' };
-  const target = langMap[lang] || 'en';
-
-  res.redirect(`/survey/${target}?${params.toString()}`);
-});
-
-// Serve survey HTML files
-app.get('/survey/de', (req, res) => {
-  res.sendFile(path.join(__dirname, 'surveys', 'survey-de.html'));
-});
-app.get('/survey/en', (req, res) => {
-  res.sendFile(path.join(__dirname, 'surveys', 'survey-en.html'));
-});
-app.get('/survey/fr', (req, res) => {
-  res.sendFile(path.join(__dirname, 'surveys', 'survey-fr.html'));
-});
-
-// ─── Submission API ───────────────────────────────────────────────────────────
-
-app.post('/api/submit', (req, res) => {
-  try {
-    const { unit, market, lang, q1_overall, q2_timeliness, q3_recommend, comments } = req.body;
-
-    // Validate required metadata
-    if (!unit || typeof unit !== 'string' || unit.trim() === '') {
-      return res.status(400).json({ error: 'Missing required field: unit' });
-    }
-    if (!market || typeof market !== 'string' || market.trim() === '') {
-      return res.status(400).json({ error: 'Missing required field: market' });
-    }
-
-    // Validate at least one rating was given
-    if (!q1_overall && !q2_timeliness && !q3_recommend) {
-      return res.status(400).json({ error: 'Please provide at least one rating' });
-    }
-
-    // Hash client IP for privacy
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
-
-    // Dedupe key: same unit + market within the same minute = duplicate
-    const dedupeRaw = `${unit.toLowerCase()}-${market.toUpperCase()}-${Math.floor(Date.now() / 60000)}`;
-    const dedupeKey = crypto.createHash('sha256').update(dedupeRaw).digest('hex');
-
-    if (isDuplicateKey(dedupeKey)) {
-      return res.status(200).json({ success: true, note: 'duplicate' });
-    }
-
-    // Sanitize free-text comments
-    const cleanComments = comments
-      ? sanitizeHtml(comments, { allowedTags: [], allowedAttributes: {} }).trim()
-      : null;
-
-    const record = {
-      survey_id:     uuidv4(),
-      unit:          unit.toLowerCase().trim(),
-      market:        market.toUpperCase().trim(),
-      lang:          (lang || 'en').toLowerCase().trim(),
-      q1_overall:    q1_overall    ? parseInt(q1_overall)    : null,
-      q2_timeliness: q2_timeliness ? parseInt(q2_timeliness) : null,
-      q3_recommend:  q3_recommend  ? parseInt(q3_recommend)  : null,
-      comments:      cleanComments,
-      submitted_at:  new Date().toISOString(),
-      ip_hash:       ipHash,
-      dedupe_key:    dedupeKey,
-    };
-
-    const insertedId = insertResponse(record);
-    console.log(`Survey submitted: ${record.survey_id} | unit=${record.unit} | market=${record.market}`);
-
-    return res.status(201).json({ success: true, survey_id: record.survey_id });
-
-  } catch (err) {
-    console.error('Submission error:', err);
-    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
-  }
-});
-
-// ─── Results viewer ───────────────────────────────────────────────────────────
-
-app.get('/results', (req, res) => {
-  const { unit, market } = req.query;
-
-  let responses;
-  if (unit && market) {
-    responses = getResponsesByUnitAndMarket(unit, market);
-  } else if (unit) {
-    responses = getResponsesByUnit(unit);
-  } else if (market) {
-    responses = getResponsesByMarket(market);
-  } else {
-    responses = getAllResponses();
-  }
-
-  const units   = getDistinctUnits();
-  const markets = getDistinctMarkets();
-
-  const stars = (n) => n ? '★'.repeat(n) + '☆'.repeat(5 - n) : '—';
-  const fmt   = (iso) => iso ? iso.replace('T', ' ').substring(0, 16) : '—';
-
-  const rows = responses.map(r => `
-    <tr>
-      <td>${fmt(r.submitted_at)}</td>
-      <td><strong>${r.unit}</strong></td>
-      <td>${r.market}</td>
-      <td>${r.lang}</td>
-      <td class="stars">${stars(r.q1_overall)}</td>
-      <td class="stars">${stars(r.q2_timeliness)}</td>
-      <td class="stars">${stars(r.q3_recommend)}</td>
-      <td>${r.comments || ''}</td>
-    </tr>
-  `).join('');
-
-  const unitOptions   = units.map(u   => `<option value="${u}"   ${u   === unit   ? 'selected' : ''}>${u}</option>`).join('');
-  const marketOptions = markets.map(m => `<option value="${m}"   ${m   === market ? 'selected' : ''}>${m}</option>`).join('');
-
-  res.send(`<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Survey Results</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enquête de satisfaction Hisense</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; padding: 2rem; background: #f5f5f5; color: #333; }
-    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
-    form { background: #fff; padding: 1rem 1.5rem; border-radius: 8px; border: 1px solid #ddd;
-           display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1.5rem; }
-    label { font-size: 0.85rem; color: #666; display: block; margin-bottom: 4px; }
-    select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; }
-    button { padding: 7px 16px; background: #333; color: #fff; border: none;
-             border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
-    button.clear { background: #fff; color: #333; border: 1px solid #ccc; }
-    .count { font-size: 0.9rem; color: #666; margin-bottom: 0.75rem; }
-    table { width: 100%; border-collapse: collapse; background: #fff;
-            border-radius: 8px; overflow: hidden; border: 1px solid #ddd; }
-    th { background: #333; color: #fff; padding: 10px 12px; text-align: left;
-         font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
-    td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9rem; vertical-align: top; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: #fafafa; }
-    .stars { color: #f59e0b; letter-spacing: 1px; }
-    .empty { text-align: center; padding: 3rem; color: #999; }
+    :root{--teal:#00B09B;--teal-light:#E8F7F5;--teal-dark:#008F7D;--text-dark:#1a1a2e;--text-mid:#55556A;--text-light:#9999AA;--border:#E8E8EE;--bg-gray:#F8F9FA;--radius:12px;}
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:#f4f5f7;color:var(--text-dark);min-height:100vh;}
+    .site-header{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.5rem;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;}
+    .site-header-title{font-size:.82rem;color:var(--text-light);letter-spacing:.04em;text-transform:uppercase;}
+    .logo{font-size:1.25rem;font-weight:800;color:var(--teal);letter-spacing:-.02em;}
+    .logo sup{font-size:.5em;font-weight:400;color:var(--text-mid);letter-spacing:.12em;vertical-align:super;margin-left:3px;}
+    .page{max-width:600px;margin:0 auto;padding:1.5rem 1.25rem 5rem;}
+    .illustration{background:var(--teal-light);border-radius:20px;padding:1.5rem 1rem;margin-bottom:1.75rem;overflow:hidden;}
+    .landing-text{font-size:1.05rem;line-height:1.65;color:var(--text-dark);margin-bottom:1.75rem;text-align:center;}
+    .btn-cta{display:block;width:fit-content;min-width:200px;margin:0 auto .6rem;padding:15px 36px;background:var(--teal);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s,transform .1s;letter-spacing:.01em;}
+    .btn-cta:hover{background:var(--teal-dark);}.btn-cta:active{transform:scale(.98);}
+    .completion{text-align:center;font-size:.82rem;color:var(--text-light);}
+    .card{background:#fff;border-radius:var(--radius);padding:1.25rem;margin-bottom:.75rem;border:1px solid var(--border);}
+    .q-num{font-size:.72rem;font-weight:600;color:var(--teal);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem;}
+    .q-text{font-size:.97rem;font-weight:500;color:var(--text-dark);margin-bottom:1rem;line-height:1.45;}
+    .required{color:#e53e3e;}
+    .choices{display:flex;gap:8px;}
+    .choice{flex:1;padding:10px 6px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-size:.9rem;font-weight:500;color:var(--text-mid);cursor:pointer;transition:all .15s;text-align:center;}
+    .choice:hover{border-color:var(--teal);color:var(--teal);}.choice.selected{border-color:var(--teal);background:var(--teal);color:#fff;}
+    .stars{display:flex;gap:4px;margin-bottom:4px;}
+    .stars span{font-size:2.1rem;cursor:pointer;color:#DDD;transition:color .1s;line-height:1;user-select:none;}
+    .stars span.on{color:#F59E0B;}.stars span:hover{color:#F59E0B;}
+    .scale{display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-light);margin-top:2px;}
+    .cond{margin-top:1rem;display:none;}.cond.show{display:block;}
+    .cond label{font-size:.83rem;color:var(--text-mid);display:block;margin-bottom:5px;}
+    .nps-row{display:flex;gap:3px;flex-wrap:nowrap;}
+    .nps-btn{flex:1;min-width:0;aspect-ratio:1;border:1.5px solid var(--border);border-radius:6px;background:#fff;font-size:.8rem;font-weight:500;color:var(--text-mid);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;}
+    .nps-btn:hover{border-color:var(--teal);color:var(--teal);}.nps-btn.selected{border-color:var(--teal);background:var(--teal);color:#fff;}
+    .nps-labels{display:flex;justify-content:space-between;font-size:.7rem;color:var(--text-light);margin-top:5px;}
+    textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.92rem;font-family:inherit;resize:vertical;min-height:80px;color:var(--text-dark);background:var(--bg-gray);transition:border-color .15s;}
+    textarea:focus{outline:none;border-color:var(--teal);background:#fff;}
+    .btn-submit{width:100%;padding:15px;background:var(--teal);color:#fff;border:none;border-radius:50px;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s;margin-top:.5rem;}
+    .btn-submit:hover{background:var(--teal-dark);}.btn-submit:disabled{background:#ccc;cursor:not-allowed;}
+    .error{background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:.75rem 1rem;font-size:.86rem;color:#991B1B;margin-top:.75rem;display:none;}
+    .ty{text-align:center;padding:3rem 1rem;}
+    .ty-icon{width:68px;height:68px;background:var(--teal-light);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.5rem;font-size:1.8rem;color:var(--teal);}
+    .ty h2{font-size:1.4rem;margin-bottom:.75rem;}.ty p{color:var(--text-mid);line-height:1.65;font-size:.95rem;}
+    footer{background:#fff;border-top:1px solid var(--border);padding:.75rem 1.5rem;display:flex;justify-content:center;align-items:center;gap:1.5rem;flex-wrap:wrap;font-size:.76rem;}
+    footer a{color:var(--teal);text-decoration:none;}footer a:hover{text-decoration:underline;}
   </style>
 </head>
 <body>
-  <h1>Survey Results</h1>
-  <form method="GET" action="/results">
-    <div>
-      <label>Service Unit</label>
-      <select name="unit">
-        <option value="">All units</option>
-        ${unitOptions}
-      </select>
+<input type="hidden" id="f-unit">
+<input type="hidden" id="f-market">
+
+<header class="site-header">
+  <span class="site-header-title">Enquête de satisfaction</span>
+  <span class="logo">Hisense<sup>EUROPE</sup></span>
+</header>
+
+<div id="pg-landing" class="page">
+  <div class="illustration">
+    <svg width="100%" viewBox="0 0 400 190" xmlns="http://www.w3.org/2000/svg">
+      <rect x="110" y="45" width="95" height="115" rx="9" fill="#fff" stroke="#B2DED9" stroke-width="1.5"/>
+      <rect x="120" y="53" width="75" height="28" rx="5" fill="#E8F7F5"/>
+      <circle cx="133" cy="67" r="6" fill="#00B09B"/>
+      <circle cx="150" cy="67" r="4" fill="#B2DED9"/>
+      <circle cx="163" cy="67" r="4" fill="#B2DED9"/>
+      <circle cx="157" cy="110" r="34" fill="#E8F7F5" stroke="#00B09B" stroke-width="2"/>
+      <circle cx="157" cy="110" r="23" fill="#fff" stroke="#00B09B" stroke-width="1.5"/>
+      <circle cx="157" cy="110" r="9" fill="#00B09B" opacity="0.25"/>
+      <circle cx="272" cy="72" r="19" fill="#FDDCB5"/>
+      <rect x="253" y="92" width="38" height="55" rx="9" fill="#2D7DD2"/>
+      <rect x="253" y="92" width="38" height="18" rx="9" fill="#1A5FAA"/>
+      <line x1="253" y1="108" x2="225" y2="138" stroke="#2D7DD2" stroke-width="9" stroke-linecap="round"/>
+      <line x1="291" y1="106" x2="316" y2="122" stroke="#2D7DD2" stroke-width="9" stroke-linecap="round"/>
+      <line x1="263" y1="147" x2="255" y2="178" stroke="#333" stroke-width="9" stroke-linecap="round"/>
+      <line x1="281" y1="147" x2="289" y2="178" stroke="#333" stroke-width="9" stroke-linecap="round"/>
+      <rect x="308" y="113" width="24" height="7" rx="3.5" fill="#888" transform="rotate(-25 308 113)"/>
+      <circle cx="309" cy="115" r="5" fill="none" stroke="#888" stroke-width="2.5" transform="rotate(-25 309 115)"/>
+      <rect x="52" y="140" width="52" height="32" rx="5" fill="#F0A030"/>
+      <rect x="63" y="132" width="30" height="11" rx="4" fill="#F0A030" stroke="#C07010" stroke-width="1.2"/>
+      <line x1="54" y1="155" x2="102" y2="155" stroke="#C07010" stroke-width="1.2"/>
+      <circle cx="338" cy="58" r="21" fill="#fff" stroke="#DDD" stroke-width="1.5"/>
+      <line x1="338" y1="58" x2="338" y2="43" stroke="#444" stroke-width="2" stroke-linecap="round"/>
+      <line x1="338" y1="58" x2="349" y2="64" stroke="#444" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="338" cy="58" r="2.5" fill="#444"/>
+    </svg>
+  </div>
+  <p class="landing-text">Bonjour,<br>nous aimerions en savoir plus sur le déroulement du récent entretien de votre appareil <strong>Hisense</strong>.</p>
+  <button class="btn-cta" onclick="showSurvey()">En savoir plus</button>
+  <p class="completion">Durée de remplissage : 2 minutes</p>
+</div>
+
+<div id="pg-survey" class="page" style="display:none">
+  <div class="card">
+    <p class="q-num">Question 1 sur 7</p>
+    <p class="q-text">Votre problème a-t-il été résolu ? <span class="required">*</span></p>
+    <div class="choices" data-target="q1_resolved">
+      <button class="choice" data-val="yes"      onclick="pickChoice(this)">Oui</button>
+      <button class="choice" data-val="partially" onclick="pickChoice(this)">Partiellement</button>
+      <button class="choice" data-val="no"        onclick="pickChoice(this)">Non</button>
     </div>
-    <div>
-      <label>Market</label>
-      <select name="market">
-        <option value="">All markets</option>
-        ${marketOptions}
-      </select>
+    <input type="hidden" id="q1_resolved">
+  </div>
+  <div class="card">
+    <p class="q-num">Question 2 sur 7</p>
+    <p class="q-text">Dans quelle mesure êtes-vous satisfait du service reçu aujourd'hui ?</p>
+    <div class="stars" data-field="q2_satisfaction"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Très insatisfait</span><span>Très satisfait</span></div>
+    <input type="hidden" id="q2_satisfaction">
+  </div>
+  <div class="card">
+    <p class="q-num">Question 3 sur 7</p>
+    <p class="q-text">Comment évaluez-vous le professionnalisme et le comportement du technicien ?</p>
+    <div class="stars" data-field="q3_professionalism"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Très mauvais</span><span>Excellent</span></div>
+    <input type="hidden" id="q3_professionalism">
+    <div class="cond" id="q3-cond">
+      <label>Veuillez expliquer ce qui s'est mal passé (optionnel) :</label>
+      <textarea id="q3_comment" placeholder="Votre avis..."></textarea>
     </div>
-    <button type="submit">Filter</button>
-    <a href="/results"><button type="button" class="clear">Clear</button></a>
-  </form>
-  <p class="count">${responses.length} response${responses.length !== 1 ? 's' : ''}</p>
-  <table>
-    <thead>
-      <tr>
-        <th>Submitted</th>
-        <th>Unit</th>
-        <th>Market</th>
-        <th>Lang</th>
-        <th>Overall</th>
-        <th>Timeliness</th>
-        <th>Recommend</th>
-        <th>Comments</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${rows || '<tr><td colspan="8" class="empty">No responses yet.</td></tr>'}
-    </tbody>
-  </table>
+  </div>
+  <div class="card">
+    <p class="q-num">Question 4 sur 7</p>
+    <p class="q-text">Dans quelle mesure le processus de service dans son ensemble a-t-il été facile pour vous ?</p>
+    <div class="stars" data-field="q4_ease"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Très difficile</span><span>Très facile</span></div>
+    <input type="hidden" id="q4_ease">
+  </div>
+  <div class="card">
+    <p class="q-num">Question 5 sur 7</p>
+    <p class="q-text">Dans quelle mesure êtes-vous satisfait du temps nécessaire pour effectuer votre réparation ?</p>
+    <div class="stars" data-field="q5_time"><span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span></div>
+    <div class="scale"><span>Très insatisfait</span><span>Très satisfait</span></div>
+    <input type="hidden" id="q5_time">
+  </div>
+  <div class="card">
+    <p class="q-num">Question 6 sur 7</p>
+    <p class="q-text">Y a-t-il quelque chose que nous aurions pu faire mieux ?</p>
+    <textarea id="q6_improvement" placeholder="Votre avis... (optionnel)"></textarea>
+  </div>
+  <div class="card">
+    <p class="q-num">Question 7 sur 7</p>
+    <p class="q-text">Quelle est la probabilité que vous recommandiez notre service à un ami ou un membre de votre famille ?</p>
+    <div class="nps-row" id="nps-row"></div>
+    <div class="nps-labels"><span>Pas du tout probable</span><span>Extrêmement probable</span></div>
+    <input type="hidden" id="nps_score">
+  </div>
+  <button class="btn-submit" id="submit-btn" onclick="submitSurvey()">Envoyer</button>
+  <div class="error" id="error-msg"></div>
+</div>
+
+<div id="pg-thankyou" class="page" style="display:none">
+  <div class="ty">
+    <div class="ty-icon">✓</div>
+    <h2>Merci pour votre retour !</h2>
+    <p>Votre réponse nous aide à améliorer notre service.<br>Nous apprécions le temps que vous nous avez accordé.</p>
+  </div>
+</div>
+
+<footer>
+  <a href="#privacy">Politique de confidentialité</a>
+  <a href="#terms">Conditions générales</a>
+  <a href="mailto:privacy@hisense-europe.com">Contact : privacy@hisense-europe.com</a>
+</footer>
+
+<script>
+  const p=new URLSearchParams(window.location.search);
+  document.getElementById('f-unit').value=p.get('unit')||'';
+  document.getElementById('f-market').value=p.get('market')||'';
+  function showSurvey(){document.getElementById('pg-landing').style.display='none';document.getElementById('pg-survey').style.display='block';window.scrollTo(0,0);}
+  function pickChoice(btn){const row=btn.closest('.choices');row.querySelectorAll('.choice').forEach(b=>b.classList.remove('selected'));btn.classList.add('selected');document.getElementById(row.dataset.target).value=btn.dataset.val;}
+  document.querySelectorAll('.stars').forEach(group=>{const field=group.dataset.field,spans=group.querySelectorAll('span');spans.forEach(span=>span.addEventListener('click',()=>{const val=parseInt(span.dataset.v);document.getElementById(field).value=val;spans.forEach(s=>s.classList.toggle('on',parseInt(s.dataset.v)<=val));if(field==='q3_professionalism')document.getElementById('q3-cond').classList.toggle('show',val<=2);}));});
+  const npsRow=document.getElementById('nps-row');for(let i=0;i<=10;i++){const b=document.createElement('button');b.className='nps-btn';b.textContent=i;b.type='button';b.onclick=()=>{document.getElementById('nps_score').value=i;npsRow.querySelectorAll('.nps-btn').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');};npsRow.appendChild(b);}
+  async function submitSurvey(){const btn=document.getElementById('submit-btn'),err=document.getElementById('error-msg');err.style.display='none';if(!document.getElementById('q1_resolved').value){err.textContent='Veuillez répondre à la question 1.';err.style.display='block';document.querySelector('.card').scrollIntoView({behavior:'smooth'});return;}btn.disabled=true;btn.textContent='Envoi en cours...';const ns=document.getElementById('nps_score').value;try{const res=await fetch('/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unit:document.getElementById('f-unit').value,market:document.getElementById('f-market').value,lang:'fr',q1_resolved:document.getElementById('q1_resolved').value||null,q2_satisfaction:document.getElementById('q2_satisfaction').value||null,q3_professionalism:document.getElementById('q3_professionalism').value||null,q3_comment:document.getElementById('q3_comment').value.trim()||null,q4_ease:document.getElementById('q4_ease').value||null,q5_time:document.getElementById('q5_time').value||null,q6_improvement:document.getElementById('q6_improvement').value.trim()||null,nps_score:ns!==''?parseInt(ns):null})});const data=await res.json();if(res.ok&&data.success){document.getElementById('pg-survey').style.display='none';document.getElementById('pg-thankyou').style.display='block';window.scrollTo(0,0);}else throw new Error(data.error||'Erreur');}catch(e){err.textContent='Erreur : '+e.message;err.style.display='block';btn.disabled=false;btn.textContent='Envoyer';}}
+</script>
 </body>
-</html>`);
-});
-
-// ─── Start server ─────────────────────────────────────────────────────────────
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Test survey: http://localhost:${PORT}/survey/de?unit=baumeister&market=DE&lang=de`);
-  console.log(`Results:     http://localhost:${PORT}/results`);
-});
+</html>
