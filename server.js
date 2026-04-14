@@ -32,7 +32,7 @@ app.get('/survey/fr', (req, res) => res.sendFile(path.join(__dirname, 'surveys',
 
 // ── Submission API ────────────────────────────────────────────────────────────
 
-app.post('/api/submit', (req, res) => {
+app.post('/api/submit', async (req, res) => {
   try {
     const {
       unit, market, lang,
@@ -40,20 +40,20 @@ app.post('/api/submit', (req, res) => {
       q4_ease, q5_time, q6_improvement, nps_score,
     } = req.body;
 
-    if (!unit || typeof unit !== 'string' || !unit.trim())
+    if (!unit   || typeof unit   !== 'string' || !unit.trim())
       return res.status(400).json({ error: 'Missing required field: unit' });
     if (!market || typeof market !== 'string' || !market.trim())
       return res.status(400).json({ error: 'Missing required field: market' });
     if (!q1_resolved)
       return res.status(400).json({ error: 'Please answer question 1' });
 
-    const ip      = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    const ipHash  = crypto.createHash('sha256').update(ip).digest('hex');
-    const dedupe  = crypto.createHash('sha256')
+    const ip     = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+    const dedupe = crypto.createHash('sha256')
       .update(`${unit.toLowerCase()}-${market.toUpperCase()}-${Math.floor(Date.now()/60000)}`)
       .digest('hex');
 
-    if (isDuplicateKey(dedupe))
+    if (await isDuplicateKey(dedupe))
       return res.status(200).json({ success: true, note: 'duplicate' });
 
     const clean = (v) => v ? sanitizeHtml(v, { allowedTags:[], allowedAttributes:{} }).trim() : null;
@@ -67,17 +67,18 @@ app.post('/api/submit', (req, res) => {
       q2_satisfaction:    q2_satisfaction    ? parseInt(q2_satisfaction)    : null,
       q3_professionalism: q3_professionalism ? parseInt(q3_professionalism) : null,
       q3_comment:         clean(q3_comment),
-      q4_ease:            q4_ease  ? parseInt(q4_ease)  : null,
-      q5_time:            q5_time  ? parseInt(q5_time)  : null,
+      q4_ease:            q4_ease ? parseInt(q4_ease) : null,
+      q5_time:            q5_time ? parseInt(q5_time) : null,
       q6_improvement:     clean(q6_improvement),
-      nps_score:          (nps_score !== null && nps_score !== undefined && nps_score !== '') ? parseInt(nps_score) : null,
+      nps_score:          (nps_score !== null && nps_score !== undefined && nps_score !== '')
+                          ? parseInt(nps_score) : null,
       submitted_at:       new Date().toISOString(),
       ip_hash:            ipHash,
       dedupe_key:         dedupe,
     };
 
-    insertResponse(record);
-    console.log(`Survey submitted: ${record.survey_id} | unit=${record.unit} | market=${record.market} | NPS=${record.nps_score}`);
+    await insertResponse(record);
+    console.log(`Submitted: ${record.survey_id} | ${record.unit} | ${record.market} | NPS=${record.nps_score}`);
     return res.status(201).json({ success: true, survey_id: record.survey_id });
 
   } catch (err) {
@@ -88,43 +89,44 @@ app.post('/api/submit', (req, res) => {
 
 // ── Results viewer ────────────────────────────────────────────────────────────
 
-app.get('/results', (req, res) => {
-  const { unit, market } = req.query;
-  let responses;
-  if (unit && market)   responses = getResponsesByUnitAndMarket(unit, market);
-  else if (unit)        responses = getResponsesByUnit(unit);
-  else if (market)      responses = getResponsesByMarket(market);
-  else                  responses = getAllResponses();
+app.get('/results', async (req, res) => {
+  try {
+    const { unit, market } = req.query;
+    let responses;
+    if (unit && market)   responses = await getResponsesByUnitAndMarket(unit, market);
+    else if (unit)        responses = await getResponsesByUnit(unit);
+    else if (market)      responses = await getResponsesByMarket(market);
+    else                  responses = await getAllResponses();
 
-  const units   = getDistinctUnits();
-  const markets = getDistinctMarkets();
+    const units   = await getDistinctUnits();
+    const markets = await getDistinctMarkets();
 
-  const stars   = (n) => n ? '★'.repeat(n)+'☆'.repeat(5-n) : '—';
-  const fmt     = (iso) => iso ? iso.replace('T',' ').substring(0,16) : '—';
-  const resolved = (v) => ({ yes:'✓ Yes', partially:'~ Partially', no:'✗ No' }[v] || '—');
-  const npsColor = (n) => n === null || n === undefined ? '' :
-    n >= 9 ? 'color:#16a34a' : n >= 7 ? 'color:#d97706' : 'color:#dc2626';
+    const stars    = (n) => n ? '★'.repeat(n)+'☆'.repeat(5-n) : '—';
+    const fmt      = (iso) => iso ? iso.replace('T',' ').substring(0,16) : '—';
+    const resolved = (v) => ({ yes:'✓ Yes', partially:'~ Partially', no:'✗ No' }[v] || '—');
+    const npsColor = (n) => n === null || n === undefined ? '' :
+      n >= 9 ? 'color:#16a34a' : n >= 7 ? 'color:#d97706' : 'color:#dc2626';
 
-  const rows = responses.map(r => `
-    <tr>
-      <td>${fmt(r.submitted_at)}</td>
-      <td><strong>${r.unit}</strong></td>
-      <td>${r.market}</td>
-      <td>${r.lang}</td>
-      <td>${resolved(r.q1_resolved)}</td>
-      <td class="stars">${stars(r.q2_satisfaction)}</td>
-      <td class="stars">${stars(r.q3_professionalism)}</td>
-      <td class="stars">${stars(r.q4_ease)}</td>
-      <td class="stars">${stars(r.q5_time)}</td>
-      <td style="${npsColor(r.nps_score)};font-weight:600">${r.nps_score !== null && r.nps_score !== undefined ? r.nps_score : '—'}</td>
-      <td>${r.q3_comment||''}</td>
-      <td>${r.q6_improvement||''}</td>
-    </tr>`).join('');
+    const rows = responses.map(r => `
+      <tr>
+        <td>${fmt(r.submitted_at)}</td>
+        <td><strong>${r.unit}</strong></td>
+        <td>${r.market}</td>
+        <td>${r.lang}</td>
+        <td>${resolved(r.q1_resolved)}</td>
+        <td class="stars">${stars(r.q2_satisfaction)}</td>
+        <td class="stars">${stars(r.q3_professionalism)}</td>
+        <td class="stars">${stars(r.q4_ease)}</td>
+        <td class="stars">${stars(r.q5_time)}</td>
+        <td style="${npsColor(r.nps_score)};font-weight:600">${r.nps_score !== null && r.nps_score !== undefined ? r.nps_score : '—'}</td>
+        <td>${r.q3_comment||''}</td>
+        <td>${r.q6_improvement||''}</td>
+      </tr>`).join('');
 
-  const uOpts = units.map(u   => `<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('');
-  const mOpts = markets.map(m => `<option value="${m}" ${m===market?'selected':''}>${m}</option>`).join('');
+    const uOpts = units.map(u   => `<option value="${u}" ${u===unit?'selected':''}>${u}</option>`).join('');
+    const mOpts = markets.map(m => `<option value="${m}" ${m===market?'selected':''}>${m}</option>`).join('');
 
-  res.send(`<!DOCTYPE html>
+    res.send(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Survey Results</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -163,12 +165,16 @@ app.get('/results', (req, res) => {
   <tbody>${rows||'<tr><td colspan="12" class="empty">No responses yet.</td></tr>'}</tbody>
 </table></div>
 </body></html>`);
+  } catch (err) {
+    console.error('Results error:', err);
+    res.status(500).send('Error loading results.');
+  }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Test survey: http://localhost:${PORT}/survey/de?unit=baumeister&market=DE&lang=de`);
+  console.log(`Test survey: http://localhost:${PORT}/survey/en?unit=baumeister&market=DE&lang=en`);
   console.log(`Results:     http://localhost:${PORT}/results`);
 });
