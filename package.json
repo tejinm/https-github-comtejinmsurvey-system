@@ -1,0 +1,18 @@
+{
+  "name": "survey-system",
+  "version": "1.0.0",
+  "description": "Customer satisfaction survey system with QR code support",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "generate-qr": "node qr-generator.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "qrcode": "^1.5.3",
+    "sanitize-html": "^2.12.1",
+    "uuid": "^9.0.1"
+  }
+}

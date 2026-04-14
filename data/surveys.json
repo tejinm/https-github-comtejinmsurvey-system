@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "survey_id": "e73b1bb6-3379-45e5-8d97-9cced2348e13",
+    "unit": "baumeister",
+    "market": "DE",
+    "lang": "de",
+    "q1_overall": 5,
+    "q2_timeliness": 4,
+    "q3_recommend": 4,
+    "comments": "YAS!",
+    "submitted_at": "2026-04-14T14:44:01.683Z",
+    "ip_hash": "12ca17b49af2289436f303e0166030a21e525d266e209267433801a8fd4071a0",
+    "dedupe_key": "036d06693ce5fbc7c61c0f48983fa9dd50d84074e26416fc6cde51eaa1b15b0e"
+  }
+]

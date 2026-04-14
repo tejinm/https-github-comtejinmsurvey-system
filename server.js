@@ -1,0 +1,225 @@
+const express = require('express');
+const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
+const sanitizeHtml = require('sanitize-html');
+const path = require('path');
+require('dotenv').config();
+
+const {
+  insertResponse,
+  getAllResponses,
+  getResponsesByUnit,
+  getResponsesByMarket,
+  getResponsesByUnitAndMarket,
+  isDuplicateKey,
+  getDistinctUnits,
+  getDistinctMarkets,
+} = require('./db');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ─── Survey routes ────────────────────────────────────────────────────────────
+
+// Language router — this is what gets encoded in QR codes
+// e.g. http://localhost:3000/start?unit=baumeister&market=DE&lang=de
+app.get('/start', (req, res) => {
+  const { lang, unit, market } = req.query;
+  const params = new URLSearchParams({ unit: unit || '', market: market || '', lang: lang || 'en' });
+
+  const langMap = { de: 'de', fr: 'fr', en: 'en' };
+  const target = langMap[lang] || 'en';
+
+  res.redirect(`/survey/${target}?${params.toString()}`);
+});
+
+// Serve survey HTML files
+app.get('/survey/de', (req, res) => {
+  res.sendFile(path.join(__dirname, 'surveys', 'survey-de.html'));
+});
+app.get('/survey/en', (req, res) => {
+  res.sendFile(path.join(__dirname, 'surveys', 'survey-en.html'));
+});
+app.get('/survey/fr', (req, res) => {
+  res.sendFile(path.join(__dirname, 'surveys', 'survey-fr.html'));
+});
+
+// ─── Submission API ───────────────────────────────────────────────────────────
+
+app.post('/api/submit', (req, res) => {
+  try {
+    const { unit, market, lang, q1_overall, q2_timeliness, q3_recommend, comments } = req.body;
+
+    // Validate required metadata
+    if (!unit || typeof unit !== 'string' || unit.trim() === '') {
+      return res.status(400).json({ error: 'Missing required field: unit' });
+    }
+    if (!market || typeof market !== 'string' || market.trim() === '') {
+      return res.status(400).json({ error: 'Missing required field: market' });
+    }
+
+    // Validate at least one rating was given
+    if (!q1_overall && !q2_timeliness && !q3_recommend) {
+      return res.status(400).json({ error: 'Please provide at least one rating' });
+    }
+
+    // Hash client IP for privacy
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ipHash = crypto.createHash('sha256').update(ip).digest('hex');
+
+    // Dedupe key: same unit + market within the same minute = duplicate
+    const dedupeRaw = `${unit.toLowerCase()}-${market.toUpperCase()}-${Math.floor(Date.now() / 60000)}`;
+    const dedupeKey = crypto.createHash('sha256').update(dedupeRaw).digest('hex');
+
+    if (isDuplicateKey(dedupeKey)) {
+      return res.status(200).json({ success: true, note: 'duplicate' });
+    }
+
+    // Sanitize free-text comments
+    const cleanComments = comments
+      ? sanitizeHtml(comments, { allowedTags: [], allowedAttributes: {} }).trim()
+      : null;
+
+    const record = {
+      survey_id:     uuidv4(),
+      unit:          unit.toLowerCase().trim(),
+      market:        market.toUpperCase().trim(),
+      lang:          (lang || 'en').toLowerCase().trim(),
+      q1_overall:    q1_overall    ? parseInt(q1_overall)    : null,
+      q2_timeliness: q2_timeliness ? parseInt(q2_timeliness) : null,
+      q3_recommend:  q3_recommend  ? parseInt(q3_recommend)  : null,
+      comments:      cleanComments,
+      submitted_at:  new Date().toISOString(),
+      ip_hash:       ipHash,
+      dedupe_key:    dedupeKey,
+    };
+
+    const insertedId = insertResponse(record);
+    console.log(`Survey submitted: ${record.survey_id} | unit=${record.unit} | market=${record.market}`);
+
+    return res.status(201).json({ success: true, survey_id: record.survey_id });
+
+  } catch (err) {
+    console.error('Submission error:', err);
+    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
+// ─── Results viewer ───────────────────────────────────────────────────────────
+
+app.get('/results', (req, res) => {
+  const { unit, market } = req.query;
+
+  let responses;
+  if (unit && market) {
+    responses = getResponsesByUnitAndMarket(unit, market);
+  } else if (unit) {
+    responses = getResponsesByUnit(unit);
+  } else if (market) {
+    responses = getResponsesByMarket(market);
+  } else {
+    responses = getAllResponses();
+  }
+
+  const units   = getDistinctUnits();
+  const markets = getDistinctMarkets();
+
+  const stars = (n) => n ? '★'.repeat(n) + '☆'.repeat(5 - n) : '—';
+  const fmt   = (iso) => iso ? iso.replace('T', ' ').substring(0, 16) : '—';
+
+  const rows = responses.map(r => `
+    <tr>
+      <td>${fmt(r.submitted_at)}</td>
+      <td><strong>${r.unit}</strong></td>
+      <td>${r.market}</td>
+      <td>${r.lang}</td>
+      <td class="stars">${stars(r.q1_overall)}</td>
+      <td class="stars">${stars(r.q2_timeliness)}</td>
+      <td class="stars">${stars(r.q3_recommend)}</td>
+      <td>${r.comments || ''}</td>
+    </tr>
+  `).join('');
+
+  const unitOptions   = units.map(u   => `<option value="${u}"   ${u   === unit   ? 'selected' : ''}>${u}</option>`).join('');
+  const marketOptions = markets.map(m => `<option value="${m}"   ${m   === market ? 'selected' : ''}>${m}</option>`).join('');
+
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Survey Results</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; padding: 2rem; background: #f5f5f5; color: #333; }
+    h1 { margin-bottom: 1.5rem; font-size: 1.5rem; }
+    form { background: #fff; padding: 1rem 1.5rem; border-radius: 8px; border: 1px solid #ddd;
+           display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    label { font-size: 0.85rem; color: #666; display: block; margin-bottom: 4px; }
+    select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; }
+    button { padding: 7px 16px; background: #333; color: #fff; border: none;
+             border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    button.clear { background: #fff; color: #333; border: 1px solid #ccc; }
+    .count { font-size: 0.9rem; color: #666; margin-bottom: 0.75rem; }
+    table { width: 100%; border-collapse: collapse; background: #fff;
+            border-radius: 8px; overflow: hidden; border: 1px solid #ddd; }
+    th { background: #333; color: #fff; padding: 10px 12px; text-align: left;
+         font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9rem; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+    .stars { color: #f59e0b; letter-spacing: 1px; }
+    .empty { text-align: center; padding: 3rem; color: #999; }
+  </style>
+</head>
+<body>
+  <h1>Survey Results</h1>
+  <form method="GET" action="/results">
+    <div>
+      <label>Service Unit</label>
+      <select name="unit">
+        <option value="">All units</option>
+        ${unitOptions}
+      </select>
+    </div>
+    <div>
+      <label>Market</label>
+      <select name="market">
+        <option value="">All markets</option>
+        ${marketOptions}
+      </select>
+    </div>
+    <button type="submit">Filter</button>
+    <a href="/results"><button type="button" class="clear">Clear</button></a>
+  </form>
+  <p class="count">${responses.length} response${responses.length !== 1 ? 's' : ''}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Submitted</th>
+        <th>Unit</th>
+        <th>Market</th>
+        <th>Lang</th>
+        <th>Overall</th>
+        <th>Timeliness</th>
+        <th>Recommend</th>
+        <th>Comments</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows || '<tr><td colspan="8" class="empty">No responses yet.</td></tr>'}
+    </tbody>
+  </table>
+</body>
+</html>`);
+});
+
+// ─── Start server ─────────────────────────────────────────────────────────────
+
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Test survey: http://localhost:${PORT}/survey/de?unit=baumeister&market=DE&lang=de`);
+  console.log(`Results:     http://localhost:${PORT}/results`);
+});
